@@ -2998,6 +2998,15 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@calcom/restream-studio@workspace:packages/app-store/restream-studio":
+  version: 0.0.0-use.local
+  resolution: "@calcom/restream-studio@workspace:packages/app-store/restream-studio"
+  dependencies:
+    "@calcom/lib": "workspace:*"
+    "@calcom/types": "workspace:*"
+  languageName: unknown
+  linkType: soft
+
 "@calcom/riverside@workspace:packages/app-store/riverside":
   version: 0.0.0-use.local
   resolution: "@calcom/riverside@workspace:packages/app-store/riverside"
