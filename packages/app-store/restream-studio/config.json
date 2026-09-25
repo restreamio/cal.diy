@@ -4,22 +4,21 @@
   "slug": "restream-studio",
   "type": "restream-studio_conferencing",
   "logo": "icon.svg",
-  "url": "https://example.com/link",
+  "url": "https://restream.io",
   "variant": "conferencing",
   "categories": ["conferencing"],
   "publisher": "Restream",
   "email": "admin@restream.io",
   "appData": {
     "location": {
-      "type": "integrations:{SLUG}_video",
+      "type": "integrations:{SLUG}_conferencing",
       "label": "{TITLE}",
-      "linkType": "static",
-      "organizerInputPlaceholder": "https://video.app/mylink",
-      "urlRegExp": "^http(s)?:\\/\\/(www\\.)?video.app\\/[a-zA-Z0-9]*"
+      "linkType": "dynamic"
     }
   },
   "description": "Host private events and webinars with live chat, and invite participants to join you on stage.",
   "isTemplate": false,
+  "isOAuth": true,
   "__createdUsingCli": true,
   "__template": "event-type-location-video-static"
 }
