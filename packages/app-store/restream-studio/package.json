@@ -5,7 +5,8 @@
   "version": "0.0.0",
   "main": "./index.ts",
   "dependencies": {
-    "@calcom/lib": "workspace:*"
+    "@calcom/lib": "workspace:*",
+    "@calcom/prisma": "workspace:*"
   },
   "devDependencies": {
     "@calcom/types": "workspace:*"
