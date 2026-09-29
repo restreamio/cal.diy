@@ -5,20 +5,18 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import createOAuthAppCredential from "../../_utils/oauth/createOAuthAppCredential";
 import { decodeOAuthState } from "../../_utils/oauth/decodeOAuthState";
 import setDefaultConferencingApp from "../../_utils/setDefaultConferencingApp";
-import { requestRestreamToken } from "../lib/oauth";
+import type { IntegrationOAuthCallbackState } from "../../types";
+import { exchangeRestreamCode } from "../lib/oauth";
 import handler from "./callback";
 
 vi.mock("@calcom/prisma", () => ({ default: { credential: { deleteMany: vi.fn() } } }));
 vi.mock("../../_utils/oauth/createOAuthAppCredential", () => ({ default: vi.fn() }));
 vi.mock("../../_utils/oauth/decodeOAuthState", () => ({ decodeOAuthState: vi.fn() }));
 vi.mock("../../_utils/setDefaultConferencingApp", () => ({ default: vi.fn() }));
-vi.mock("../lib/oauth", () => ({
-  requestRestreamToken: vi.fn(),
-  getRestreamRedirectUri: () => "http://localhost:3000/api/integrations/restream-studio/callback",
-}));
+vi.mock("../lib/oauth", () => ({ exchangeRestreamCode: vi.fn() }));
 
 const mockDecodeOAuthState = vi.mocked(decodeOAuthState);
-const mockRequestRestreamToken = vi.mocked(requestRestreamToken);
+const mockExchangeRestreamCode = vi.mocked(exchangeRestreamCode);
 const mockCreateOAuthAppCredential = vi.mocked(createOAuthAppCredential);
 const mockSetDefaultConferencingApp = vi.mocked(setDefaultConferencingApp);
 const mockDeleteMany = vi.mocked(prisma.credential.deleteMany);
@@ -30,6 +28,14 @@ const TOKEN = {
   refresh_token: "refresh",
   expiry_date: 1_700_000_000_000,
 };
+
+const buildState = (
+  overrides: Partial<IntegrationOAuthCallbackState> = {}
+): IntegrationOAuthCallbackState => ({
+  onErrorReturnTo: `${WEBAPP_URL}/apps/restream-studio`,
+  fromApp: true,
+  ...overrides,
+});
 
 const buildReq = (query: Record<string, string>, userId: number | null = 1): NextApiRequest =>
   ({ query, session: userId ? { user: { id: userId } } : undefined }) as unknown as NextApiRequest;
@@ -53,15 +59,15 @@ const callHandler = async (req: NextApiRequest) => {
 describe("restream-studio callback", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockDecodeOAuthState.mockReturnValue({ returnTo: RETURN_TO });
-    mockRequestRestreamToken.mockResolvedValue(TOKEN);
+    mockDecodeOAuthState.mockReturnValue(buildState({ returnTo: RETURN_TO }));
+    mockExchangeRestreamCode.mockResolvedValue(TOKEN);
   });
 
   it("rejects unauthenticated requests", async () => {
     const res = await callHandler(buildReq({ code: "abc" }, null));
 
     expect(res.status).toHaveBeenCalledWith(401);
-    expect(mockRequestRestreamToken).not.toHaveBeenCalled();
+    expect(mockExchangeRestreamCode).not.toHaveBeenCalled();
   });
 
   it("redirects back to the app when the user denies access", async () => {
@@ -70,7 +76,7 @@ describe("restream-studio callback", () => {
     const res = await callHandler(buildReq({}));
 
     expect(res.redirect).toHaveBeenCalledWith(INSTALLED_APP_PATH);
-    expect(mockRequestRestreamToken).not.toHaveBeenCalled();
+    expect(mockExchangeRestreamCode).not.toHaveBeenCalled();
   });
 
   it("rejects the code exchange when the state is invalid", async () => {
@@ -80,11 +86,11 @@ describe("restream-studio callback", () => {
 
     expect(res.status).toHaveBeenCalledWith(400);
     expect(res.json).toHaveBeenCalledWith({ message: "Invalid OAuth state" });
-    expect(mockRequestRestreamToken).not.toHaveBeenCalled();
+    expect(mockExchangeRestreamCode).not.toHaveBeenCalled();
   });
 
   it("returns the Restream error when the code exchange fails", async () => {
-    mockRequestRestreamToken.mockRejectedValue(new Error("Invalid grant: authorization code is invalid"));
+    mockExchangeRestreamCode.mockRejectedValue(new Error("Invalid grant: authorization code is invalid"));
 
     const res = await callHandler(buildReq({ code: "bad", state: "{}" }));
 
@@ -98,11 +104,7 @@ describe("restream-studio callback", () => {
 
     const res = await callHandler(req);
 
-    expect(mockRequestRestreamToken).toHaveBeenCalledWith({
-      grant_type: "authorization_code",
-      code: "abc",
-      redirect_uri: "http://localhost:3000/api/integrations/restream-studio/callback",
-    });
+    expect(mockExchangeRestreamCode).toHaveBeenCalledWith("abc");
     expect(mockDeleteMany).toHaveBeenCalledWith({
       where: { type: "restream-studio_conferencing", userId: 1, appId: "restream-studio" },
     });
@@ -116,7 +118,7 @@ describe("restream-studio callback", () => {
   });
 
   it("sets the app as default conferencing app when requested", async () => {
-    mockDecodeOAuthState.mockReturnValue({ defaultInstall: true });
+    mockDecodeOAuthState.mockReturnValue(buildState({ defaultInstall: true }));
 
     const res = await callHandler(buildReq({ code: "abc", state: "{}" }));
 

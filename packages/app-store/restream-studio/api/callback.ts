@@ -8,7 +8,7 @@ import { decodeOAuthState } from "../../_utils/oauth/decodeOAuthState";
 import setDefaultConferencingApp from "../../_utils/setDefaultConferencingApp";
 import appConfig from "../config.json";
 import type { RestreamCredentialKey } from "../lib/oauth";
-import { getRestreamRedirectUri, requestRestreamToken } from "../lib/oauth";
+import { exchangeRestreamCode } from "../lib/oauth";
 
 const log = logger.getSubLogger({ prefix: ["app-store/restream-studio/api/callback"] });
 
@@ -33,11 +33,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   let credentialKey: RestreamCredentialKey;
   try {
-    credentialKey = await requestRestreamToken({
-      grant_type: "authorization_code",
-      code,
-      redirect_uri: getRestreamRedirectUri(),
-    });
+    credentialKey = await exchangeRestreamCode(code);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     log.error("Restream code exchange failed", message);

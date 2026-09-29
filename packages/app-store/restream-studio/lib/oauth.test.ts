@@ -1,14 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import getAppKeysFromSlug from "../../_utils/getAppKeysFromSlug";
 import {
+  exchangeRestreamCode,
+  fetchRestreamToken,
   getRestreamAppKeys,
   getRestreamRedirectUri,
   RESTREAM_TOKEN_URL,
-  requestRestreamToken,
 } from "./oauth";
 
 vi.mock("../../_utils/getAppKeysFromSlug", () => ({ default: vi.fn() }));
-vi.mock("@calcom/lib/constants", () => ({ WEBAPP_URL_FOR_OAUTH: "http://localhost:3000" }));
+vi.mock("@calcom/lib/constants", () => ({
+  WEBAPP_URL_FOR_OAUTH: "https://app.cal.com",
+}));
 
 const mockGetAppKeysFromSlug = vi.mocked(getAppKeysFromSlug);
 const fetchMock = vi.fn();
@@ -46,11 +49,43 @@ describe("restream-studio oauth", () => {
   });
 
   it("builds the callback redirect uri from the app slug", () => {
-    expect(getRestreamRedirectUri()).toBe("http://localhost:3000/api/integrations/restream-studio/callback");
+    expect(getRestreamRedirectUri()).toBe("https://app.cal.com/api/integrations/restream-studio/callback");
   });
 
-  describe("requestRestreamToken", () => {
-    it("sends client credentials as basic auth and returns the token with an absolute expiry", async () => {
+  describe("fetchRestreamToken", () => {
+    it("sends the grant as a form body with client credentials as basic auth", async () => {
+      fetchMock.mockResolvedValue(jsonResponse({}));
+
+      await fetchRestreamToken({ grant_type: "refresh_token", refresh_token: "refresh" });
+
+      const [url, init] = fetchMock.mock.calls[0];
+      expect(url).toBe(RESTREAM_TOKEN_URL);
+      expect(init.method).toBe("POST");
+      expect(init.headers).toEqual({
+        Authorization: `Basic ${Buffer.from("client-id:client-secret").toString("base64")}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      });
+      expect(Object.fromEntries(init.body)).toEqual({
+        grant_type: "refresh_token",
+        refresh_token: "refresh",
+      });
+    });
+
+    it("returns error responses without throwing", async () => {
+      const response = jsonResponse(
+        { error: { message: "Invalid grant: refresh token is invalid", name: "invalid_grant" } },
+        400
+      );
+      fetchMock.mockResolvedValue(response);
+
+      await expect(
+        fetchRestreamToken({ grant_type: "refresh_token", refresh_token: "refresh" })
+      ).resolves.toBe(response);
+    });
+  });
+
+  describe("exchangeRestreamCode", () => {
+    it("exchanges the code and returns the token with an absolute expiry", async () => {
       fetchMock.mockResolvedValue(
         jsonResponse({
           access_token: "access",
@@ -63,7 +98,7 @@ describe("restream-studio oauth", () => {
         })
       );
 
-      const token = await requestRestreamToken({ grant_type: "authorization_code", code: "abc" });
+      const token = await exchangeRestreamCode("abc");
 
       expect(token).toEqual({
         access_token: "access",
@@ -72,14 +107,11 @@ describe("restream-studio oauth", () => {
         token_type: "Bearer",
         expiry_date: new Date("2026-01-01T01:00:00.000Z").getTime(),
       });
-
-      const [url, init] = fetchMock.mock.calls[0];
-      expect(url).toBe(RESTREAM_TOKEN_URL);
-      expect(init.method).toBe("POST");
-      expect(init.headers.Authorization).toBe(
-        `Basic ${Buffer.from("client-id:client-secret").toString("base64")}`
-      );
-      expect(init.body.toString()).toBe("grant_type=authorization_code&code=abc");
+      expect(Object.fromEntries(fetchMock.mock.calls[0][1].body)).toEqual({
+        grant_type: "authorization_code",
+        code: "abc",
+        redirect_uri: "https://app.cal.com/api/integrations/restream-studio/callback",
+      });
     });
 
     it("throws the Restream error message on a failed request", async () => {
@@ -90,7 +122,7 @@ describe("restream-studio oauth", () => {
         )
       );
 
-      await expect(requestRestreamToken({ grant_type: "authorization_code", code: "bad" })).rejects.toThrow(
+      await expect(exchangeRestreamCode("bad")).rejects.toThrow(
         "Invalid grant: authorization code is invalid"
       );
     });
@@ -98,7 +130,7 @@ describe("restream-studio oauth", () => {
     it("falls back to the status code when the error body is not JSON", async () => {
       fetchMock.mockResolvedValue(new Response("Bad gateway", { status: 502 }));
 
-      await expect(requestRestreamToken({ grant_type: "authorization_code", code: "abc" })).rejects.toThrow(
+      await expect(exchangeRestreamCode("abc")).rejects.toThrow(
         "Restream token request failed with status 502"
       );
     });
